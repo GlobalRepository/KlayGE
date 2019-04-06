@@ -200,7 +200,8 @@ namespace KlayGE
 		*vpl_view_param_ = g_buffer_camera_->ViewMatrix();
 		*vpl_proj_param_ = g_buffer_camera_->ProjMatrix();
 
-		float3 p = MathLib::transform_coord(light.Position(), g_buffer_camera_->ViewMatrix());
+		float3 p = MathLib::transform_coord(
+			MathLib::transform_coord(float3(0, 0, 0), light.BoundSceneNode()->TransformToWorld()), g_buffer_camera_->ViewMatrix());
 		*vpl_light_pos_es_param_ = float4(p.x(), p.y(), p.z(), 1);
 		*vpl_light_color_param_ = light.Color();
 		*vpl_light_falloff_param_ = light.Falloff();

@@ -559,37 +559,38 @@ namespace KlayGE
 
 		deferred_rendering_ = Context::Instance().DeferredRenderingLayerInstance();
 
-		axis_ = MakeSharedPtr<SceneNode>(MakeSharedPtr<RenderAxis>(),
+		axis_ = MakeSharedPtr<SceneNode>(MakeSharedPtr<RenderableComponent>(MakeSharedPtr<RenderAxis>()),
 			SceneNode::SOA_Cullable | SceneNode::SOA_Moveable | SceneNode::SOA_NotCastShadow);
 		Context::Instance().SceneManagerInstance().SceneRootNode().AddChild(axis_);
 
-		grid_ = MakeSharedPtr<SceneNode>(MakeSharedPtr<RenderGrid>(),
+		grid_ = MakeSharedPtr<SceneNode>(MakeSharedPtr<RenderableComponent>(MakeSharedPtr<RenderGrid>()),
 			SceneNode::SOA_Cullable | SceneNode::SOA_Moveable | SceneNode::SOA_NotCastShadow);
 		Context::Instance().SceneManagerInstance().SceneRootNode().AddChild(grid_);
 
-		skybox_ = MakeSharedPtr<SceneNode>(MakeSharedPtr<RenderableSkyBox>(), SceneNode::SOA_NotCastShadow);
-		checked_pointer_cast<RenderableSkyBox>(skybox_->GetRenderable())->CompressedCubeMap(
-			SyncLoadTexture("default_bg_y.dds", EAH_GPU_Read | EAH_Immutable),
+		auto skybox_renderable = MakeSharedPtr<RenderableSkyBox>();
+		skybox_ = MakeSharedPtr<SceneNode>(MakeSharedPtr<RenderableComponent>(skybox_renderable), SceneNode::SOA_NotCastShadow);
+		skybox_renderable->CompressedCubeMap(SyncLoadTexture("default_bg_y.dds", EAH_GPU_Read | EAH_Immutable),
 			SyncLoadTexture("default_bg_c.dds", EAH_GPU_Read | EAH_Immutable));
 		Context::Instance().SceneManagerInstance().SceneRootNode().AddChild(skybox_);
 
-		selected_bb_ = MakeSharedPtr<SceneNode>(MakeSharedPtr<RenderableLineBox>(),
+		auto line_box_renderable = MakeSharedPtr<RenderableLineBox>();
+		selected_bb_ = MakeSharedPtr<SceneNode>(MakeSharedPtr<RenderableComponent>(line_box_renderable),
 			SceneNode::SOA_Moveable | SceneNode::SOA_NotCastShadow);
 		selected_bb_->Visible(false);
 		Context::Instance().SceneManagerInstance().SceneRootNode().AddChild(selected_bb_);
-		checked_pointer_cast<RenderableLineBox>(selected_bb_->GetRenderable())->SetColor(Color(1, 1, 1, 1));
+		line_box_renderable->SetColor(Color(1, 1, 1, 1));
 
-		translation_axis_ = MakeSharedPtr<SceneNode>(MakeSharedPtr<RenderableTranslationAxis>(),
+		translation_axis_ = MakeSharedPtr<SceneNode>(MakeSharedPtr<RenderableComponent>(MakeSharedPtr<RenderableTranslationAxis>()),
 			SceneNode::SOA_Moveable | SceneNode::SOA_NotCastShadow);
 		translation_axis_->Visible(false);
 		Context::Instance().SceneManagerInstance().SceneRootNode().AddChild(translation_axis_);
 
-		rotation_axis_ = MakeSharedPtr<SceneNode>(MakeSharedPtr<RenderableRotationAxis>(),
+		rotation_axis_ = MakeSharedPtr<SceneNode>(MakeSharedPtr<RenderableComponent>(MakeSharedPtr<RenderableRotationAxis>()),
 			SceneNode::SOA_Moveable | SceneNode::SOA_NotCastShadow);
 		rotation_axis_->Visible(false);
 		Context::Instance().SceneManagerInstance().SceneRootNode().AddChild(rotation_axis_);
 
-		scaling_axis_ = MakeSharedPtr<SceneNode>(MakeSharedPtr<RenderableScalingAxis>(),
+		scaling_axis_ = MakeSharedPtr<SceneNode>(MakeSharedPtr<RenderableComponent>(MakeSharedPtr<RenderableScalingAxis>()),
 			SceneNode::SOA_Moveable | SceneNode::SOA_NotCastShadow);
 		scaling_axis_->Visible(false);
 		Context::Instance().SceneManagerInstance().SceneRootNode().AddChild(scaling_axis_);
@@ -772,6 +773,7 @@ namespace KlayGE
 	{
 		skybox_name_ = name;
 
+		auto& skybox_renderable = checked_cast<RenderableSkyBox&>(skybox_->FirstComponentOfType<RenderableComponent>()->BoundRenderable());
 		if (!skybox_name_.empty())
 		{
 			TexturePtr y_tex = SyncLoadTexture(name, EAH_GPU_Read | EAH_Immutable);
@@ -798,7 +800,7 @@ namespace KlayGE
 
 			if (c_tex)
 			{
-				checked_pointer_cast<RenderableSkyBox>(skybox_->GetRenderable())->CompressedCubeMap(y_tex, c_tex);
+				skybox_renderable.CompressedCubeMap(y_tex, c_tex);
 				if (ambient_light_)
 				{
 					ambient_light_->SkylightTex(y_tex, c_tex);
@@ -806,7 +808,7 @@ namespace KlayGE
 			}
 			else
 			{
-				checked_pointer_cast<RenderableSkyBox>(skybox_->GetRenderable())->CubeMap(y_tex);
+				skybox_renderable.CubeMap(y_tex);
 				if (ambient_light_)
 				{
 					ambient_light_->SkylightTex(y_tex);
@@ -817,7 +819,7 @@ namespace KlayGE
 		{
 			TexturePtr y_cube = SyncLoadTexture("default_bg_y.dds", EAH_GPU_Read | EAH_Immutable);
 			TexturePtr c_cube = SyncLoadTexture("default_bg_y.dds", EAH_GPU_Read | EAH_Immutable);
-			checked_pointer_cast<RenderableSkyBox>(skybox_->GetRenderable())->CompressedCubeMap(y_cube, c_cube);
+			skybox_renderable.CompressedCubeMap(y_cube, c_cube);
 			if (ambient_light_)
 			{
 				ambient_light_->SkylightTex(y_cube, c_cube);
@@ -866,7 +868,7 @@ namespace KlayGE
 
 		auto model = SyncLoadModel(meshml_name, EAH_GPU_Read | EAH_Immutable,
 			SceneNode::SOA_Cullable | SceneNode::SOA_Moveable, AddToSceneRootHelper);
-		auto scene_obj = model->RootNode();
+		auto scene_node = model->RootNode();
 		for (size_t i = 0; i < model->NumMeshes(); ++ i)
 		{
 			model->Mesh(i)->ObjectID(entity_id);
@@ -884,7 +886,7 @@ namespace KlayGE
 		mi.trf_pos = float3(0, 0, 0);
 		mi.trf_scale = float3(1, 1, 1);
 		mi.trf_rotate = Quaternion::Identity();
-		mi.scene_obj = scene_obj;
+		mi.scene_node = scene_node;
 		entities_.insert(std::make_pair(entity_id, mi));
 
 		update_selective_buffer_ = true;
@@ -899,7 +901,7 @@ namespace KlayGE
 		{
 			if (ET_Model == iter->second.type)
 			{
-				Context::Instance().SceneManagerInstance().SceneRootNode().RemoveChild(iter->second.scene_obj);
+				Context::Instance().SceneManagerInstance().SceneRootNode().RemoveChild(iter->second.scene_node);
 				entities_.erase(iter ++);
 			}
 			else
@@ -914,6 +916,8 @@ namespace KlayGE
 
 	uint32_t KGEditorCore::AddLight(LightSource::LightType type, std::string const & name)
 	{
+		auto light_node = MakeSharedPtr<SceneNode>(SceneNode::SOA_Cullable | SceneNode::SOA_Moveable | SceneNode::SOA_NotCastShadow);
+
 		LightSourcePtr light;
 		switch (type)
 		{
@@ -952,31 +956,32 @@ namespace KlayGE
 		light->Attrib(0);
 		light->Color(float3(1, 1, 1));
 		light->Falloff(float3(1, 0, 1));
-		light->AddToSceneManager();
+		light_node->AddComponent(light);
 
-		auto light_proxy = MakeSharedPtr<SceneObjectLightSourceProxy>(light);
-		Context::Instance().SceneManagerInstance().SceneRootNode().AddChild(light_proxy->RootNode());
+		auto light_proxy = LoadLightSourceProxyModel(light);
+		auto light_proxy_node = MakeSharedPtr<SceneNode>(SceneNode::SOA_Cullable | SceneNode::SOA_Moveable | SceneNode::SOA_NotCastShadow);
+		light_proxy_node->AddChild(light_proxy->RootNode());
+		light_node->AddChild(light_proxy_node);
+		Context::Instance().SceneManagerInstance().SceneRootNode().AddChild(light_node);
 
 		uint32_t const entity_id = last_entity_id_ + 1;
 		last_entity_id_ = entity_id;
-		auto const & model = checked_pointer_cast<SceneObjectLightSourceProxy>(light_proxy)->LightModel();
-		for (size_t i = 0; i < model->NumMeshes(); ++ i)
+		for (size_t i = 0; i < light_proxy->NumMeshes(); ++ i)
 		{
-			model->Mesh(i)->ObjectID(entity_id);
+			light_proxy->Mesh(i)->ObjectID(entity_id);
 		}
 
 		EntityInfo li;
 		li.name = name;
 		li.type = ET_Light;
-		li.model = model;
+		li.model = light_proxy;
 		li.light = light;
 		li.obb = MathLib::convert_to_obbox(light_proxy->RootNode()->PosBoundOS());
 		li.trf_pivot = float3(0, 0, 0);
 		li.trf_pos = float3(0, 0, 0);
 		li.trf_scale = float3(1, 1, 1);
 		li.trf_rotate = Quaternion::Identity();
-		li.scene_obj = light_proxy->RootNode();
-		li.light_proxy = light_proxy;
+		li.scene_node = light_node;
 		entities_.insert(std::make_pair(entity_id, li));
 
 		update_selective_buffer_ = true;
@@ -991,8 +996,7 @@ namespace KlayGE
 		{
 			if (ET_Light == iter->second.type)
 			{
-				iter->second.light->DelFromSceneManager();
-				Context::Instance().SceneManagerInstance().SceneRootNode().RemoveChild(iter->second.scene_obj);
+				Context::Instance().SceneManagerInstance().SceneRootNode().RemoveChild(iter->second.scene_node);
 				entities_.erase(iter ++);
 			}
 			else
@@ -1007,32 +1011,35 @@ namespace KlayGE
 
 	uint32_t KGEditorCore::AddCamera(std::string const & name)
 	{
+		auto camera_node = MakeSharedPtr<SceneNode>(SceneNode::SOA_Cullable | SceneNode::SOA_Moveable | SceneNode::SOA_NotCastShadow);
+
 		CameraPtr camera = MakeSharedPtr<Camera>();
 		camera->AddToSceneManager();
 
-		auto camera_proxy = MakeSharedPtr<SceneObjectCameraProxy>(camera);
-		Context::Instance().SceneManagerInstance().SceneRootNode().AddChild(camera_proxy->RootNode());
+		auto camera_proxy = LoadCameraProxyModel(camera);
+		auto camera_proxy_node = MakeSharedPtr<SceneNode>(SceneNode::SOA_Cullable | SceneNode::SOA_Moveable | SceneNode::SOA_NotCastShadow);
+		camera_proxy_node->AddChild(camera_proxy->RootNode());
+		camera_node->AddChild(camera_proxy_node);
+		Context::Instance().SceneManagerInstance().SceneRootNode().AddChild(camera_node);
 
 		uint32_t const entity_id = last_entity_id_ + 1;
 		last_entity_id_ = entity_id;
-		auto const & model = checked_pointer_cast<SceneObjectCameraProxy>(camera_proxy)->CameraModel();
-		for (size_t i = 0; i < model->NumMeshes(); ++ i)
+		for (size_t i = 0; i < camera_proxy->NumMeshes(); ++ i)
 		{
-			model->Mesh(i)->ObjectID(entity_id);
+			camera_proxy->Mesh(i)->ObjectID(entity_id);
 		}
 
 		EntityInfo ci;
 		ci.name = name;
 		ci.type = ET_Camera;
-		ci.model = model;
+		ci.model = camera_proxy;
 		ci.camera = camera;
 		ci.obb = MathLib::convert_to_obbox(camera_proxy->RootNode()->PosBoundOS());
 		ci.trf_pivot = float3(0, 0, 0);
 		ci.trf_pos = float3(0, 0, 0);
 		ci.trf_scale = float3(1, 1, 1);
 		ci.trf_rotate = Quaternion::Identity();
-		ci.scene_obj = camera_proxy->RootNode();
-		ci.camera_proxy = camera_proxy;
+		ci.scene_node = camera_node;
 		entities_.insert(std::make_pair(entity_id, ci));
 
 		update_selective_buffer_ = true;
@@ -1047,8 +1054,8 @@ namespace KlayGE
 		{
 			if (ET_Camera == iter->second.type)
 			{
-				iter->second.light->DelFromSceneManager();
-				Context::Instance().SceneManagerInstance().SceneRootNode().RemoveChild(iter->second.scene_obj);
+				iter->second.camera->DelFromSceneManager();
+				Context::Instance().SceneManagerInstance().SceneRootNode().RemoveChild(iter->second.scene_node);
 				entities_.erase(iter ++);
 			}
 			else
@@ -1068,7 +1075,7 @@ namespace KlayGE
 		auto iter = entities_.find(entity_id);
 		if (iter != entities_.end())
 		{
-			Context::Instance().SceneManagerInstance().SceneRootNode().RemoveChild(iter->second.scene_obj);
+			Context::Instance().SceneManagerInstance().SceneRootNode().RemoveChild(iter->second.scene_node);
 
 			switch (iter->second.type)
 			{
@@ -1076,7 +1083,6 @@ namespace KlayGE
 				break;
 
 			case ET_Light:
-				iter->second.light->DelFromSceneManager();
 				break;
 
 			case ET_Camera:
@@ -1110,7 +1116,9 @@ namespace KlayGE
 		if (selected_entity_ > 0)
 		{
 			EntityInfo const & ei = entities_[selected_entity_];
-			checked_pointer_cast<RenderableLineBox>(selected_bb_->GetRenderable())->SetBox(ei.obb);
+			auto& line_box_renderable =
+				checked_cast<RenderableLineBox&>(selected_bb_->FirstComponentOfType<RenderableComponent>()->BoundRenderable());
+			line_box_renderable.SetBox(ei.obb);
 
 			float3 proxy_scaling;
 			float4x4 mat;
@@ -1147,13 +1155,13 @@ namespace KlayGE
 
 	bool KGEditorCore::EntityVisible(uint32_t id)
 	{
-		return this->GetEntityInfo(id).scene_obj->Visible();
+		return this->GetEntityInfo(id).scene_node->Visible();
 	}
 
 	void KGEditorCore::EntityVisible(uint32_t id, bool visible)
 	{
 		auto& entity = this->GetEntityInfo(id);
-		entity.scene_obj->Visible(visible);
+		entity.scene_node->Visible(visible);
 		if (entity.type == ET_Light)
 		{
 			entity.light->Enabled(visible);
@@ -1279,19 +1287,19 @@ namespace KlayGE
 		{
 		case ET_Light:
 			mat = this->CalcAdaptiveScaling(ei, 25, proxy_scaling);
-			ei.light->ModelMatrix(mat);
-			ei.light_proxy->Scaling(proxy_scaling * ei.trf_scale);
+			ei.scene_node->TransformToParent(mat);
+			ei.scene_node->Children()[0]->TransformToParent(MathLib::scaling(proxy_scaling * ei.trf_scale));
 			break;
 
 		case ET_Camera:
 			mat = this->CalcAdaptiveScaling(ei, 75, proxy_scaling);
 			ei.camera->ViewParams(ei.trf_pos, ei.trf_pos + MathLib::transform_normal(float3(0, 0, 1), mat),
 				MathLib::transform_normal(float3(0, 1, 0), mat));
-			ei.camera_proxy->Scaling(proxy_scaling * ei.trf_scale);
+			ei.scene_node->Children()[0]->TransformToParent(MathLib::scaling(proxy_scaling * ei.trf_scale));
 			break;
 
 		default:
-			ei.scene_obj->TransformToParent(model_mat);
+			ei.scene_node->TransformToParent(model_mat);
 			break;
 		}
 		this->UpdateEntityAxis();
@@ -1372,12 +1380,12 @@ namespace KlayGE
 
 	void KGEditorCore::UpdateSceneAABB()
 	{
-		scene_aabb_ = grid_->GetRenderable()->PosBound();
+		scene_aabb_ = grid_->FirstComponentOfType<RenderableComponent>()->BoundRenderable().PosBound();
 
 		for (auto const & entity : entities_)
 		{
 			EntityInfo const & ei = entity.second;
-			if (ei.scene_obj->Visible())
+			if (ei.scene_node->Visible())
 			{
 				float4x4 model_mat = MathLib::transformation<float>(&ei.trf_pivot, nullptr, &ei.trf_scale,
 					&ei.trf_pivot, &ei.trf_rotate, &ei.trf_pos);
@@ -1400,13 +1408,12 @@ namespace KlayGE
 				if (ET_Light == ei.type)
 				{
 					mat = this->CalcAdaptiveScaling(ei, 25, proxy_scaling);
-					ei.light_proxy->Scaling(proxy_scaling * ei.trf_scale);
 				}
 				else
 				{
 					mat = this->CalcAdaptiveScaling(ei, 75, proxy_scaling);
-					ei.camera_proxy->Scaling(proxy_scaling * ei.trf_scale);
 				}
+				ei.scene_node->Children()[0]->TransformToParent(MathLib::scaling(proxy_scaling * ei.trf_scale));
 
 				if (selected_entity_ == entity.first)
 				{
@@ -1511,7 +1518,9 @@ namespace KlayGE
 							}
 						}
 
-						checked_pointer_cast<RenderableTranslationAxis>(translation_axis_->GetRenderable())->HighlightAxis(selected_axis_);
+						checked_cast<RenderableTranslationAxis&>(
+							translation_axis_->FirstComponentOfType<RenderableComponent>()->BoundRenderable())
+							.HighlightAxis(selected_axis_);
 					}
 					break;
 
@@ -1530,7 +1539,9 @@ namespace KlayGE
 							}
 						}
 
-						checked_pointer_cast<RenderableRotationAxis>(rotation_axis_->GetRenderable())->HighlightAxis(selected_axis_);
+						checked_cast<RenderableRotationAxis&>(
+							rotation_axis_->FirstComponentOfType<RenderableComponent>()->BoundRenderable())
+							.HighlightAxis(selected_axis_);
 					}
 					break;
 
@@ -1573,7 +1584,9 @@ namespace KlayGE
 							}
 						}
 
-						checked_pointer_cast<RenderableScalingAxis>(scaling_axis_->GetRenderable())->HighlightAxis(selected_axis_);
+						checked_cast<RenderableScalingAxis&>(
+							scaling_axis_->FirstComponentOfType<RenderableComponent>()->BoundRenderable())
+							.HighlightAxis(selected_axis_);
 					}
 					break;
 
@@ -1854,7 +1867,7 @@ namespace KlayGE
 
 					float4x4 model_mat = MathLib::transformation<float>(&oi.trf_pivot, nullptr, &oi.trf_scale,
 						&oi.trf_pivot, &oi.trf_rotate, &oi.trf_pos);
-					oi.scene_obj->TransformToParent(model_mat);
+					oi.scene_node->TransformToParent(model_mat);
 				}
 				else if ("light" == node->Name())
 				{
@@ -1913,6 +1926,9 @@ namespace KlayGE
 					}
 					light->Attrib(light_attr);
 
+					float3 dir(0, 0, 1);
+					float3 pos(0, 0, 0);
+
 					XMLNodePtr color_node = node->FirstNode("color");
 					if (color_node)
 					{
@@ -1927,11 +1943,9 @@ namespace KlayGE
 						XMLNodePtr dir_node = node->FirstNode("dir");
 						if (dir_node)
 						{
-							float3 dir;
 							auto v = dir_node->Attrib("v")->ValueString();
 							MemInputStreamBuf stream_buff(v.data(), v.size());
 							std::istream(&stream_buff) >> dir.x() >> dir.y() >> dir.z();
-							light->Direction(dir);
 						}
 					}
 					if ((LightSource::LT_Point == light->Type()) || (LightSource::LT_Spot == light->Type())
@@ -1940,11 +1954,9 @@ namespace KlayGE
 						XMLNodePtr pos_node = node->FirstNode("pos");
 						if (pos_node)
 						{
-							float3 pos;
 							auto v = pos_node->Attrib("v")->ValueString();
 							MemInputStreamBuf stream_buff(v.data(), v.size());
 							std::istream(&stream_buff) >> pos.x() >> pos.y() >> pos.z();
-							light->Position(pos);
 						}
 
 						XMLNodePtr fall_off_node = node->FirstNode("fall_off");
@@ -1984,6 +1996,8 @@ namespace KlayGE
 
 						// TODO: sphere area light and tube area light
 					}
+
+					light->BoundSceneNode()->TransformToParent(MathLib::inverse(MathLib::look_at_lh(pos, pos + dir)));
 
 					this->LoadTransformNodes(node, oi);
 				}
@@ -2153,10 +2167,12 @@ namespace KlayGE
 					}
 				}
 
-				ofs << "\t\t<pos v=\"" << light->Position().x() << ' '
-					<< light->Position().y() << ' ' << light->Position().z() << "\"/>" << endl;
-				ofs << "\t\t<dir v=\"" << light->Direction().x() << ' '
-					<< light->Direction().y() << ' ' << light->Direction().z() << "\"/>" << endl;
+				float4x4 const& mat = light->BoundSceneNode()->TransformToParent();
+				float3 const pos = MathLib::transform_coord(float3(0, 0, 0), mat);
+				float3 const dir = MathLib::transform_normal(float3(0, 0, 1), mat);
+
+				ofs << "\t\t<pos v=\"" << pos.x() << ' ' << pos.y() << ' ' << pos.z() << "\"/>" << endl;
+				ofs << "\t\t<dir v=\"" << dir.x() << ' ' << dir.y() << ' ' << dir.z() << "\"/>" << endl;
 				ofs << "\t\t<color v=\"" << light->Color().x() << ' '
 					<< light->Color().y() << ' ' << light->Color().z() << "\"/>" << endl;
 				ofs << "\t\t<fall_off v=\"" << light->Falloff().x() << ' '

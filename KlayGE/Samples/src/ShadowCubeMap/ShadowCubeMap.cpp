@@ -57,12 +57,12 @@ namespace
 			pass_index_ = pass_index;
 		}
 
-		void LightSrc(LightSourcePtr const & light_src)
+		void LightSrc(LightSourcePtr const& light_src, SceneNodePtr const& light_node)
 		{
-			light_pos_ = light_src->Position();
-
-			float4x4 light_model = MathLib::to_matrix(light_src->Rotation()) * MathLib::translation(light_src->Position());
+			float4x4 const light_model = light_node->TransformToParent();
 			inv_light_model_ = MathLib::inverse(light_model);
+
+			light_pos_ = MathLib::transform_coord(float3(0, 0, 0), light_model);
 
 			App3DFramework const & app = Context::Instance().AppInstance();
 			if ((SMT_CubeOne == sm_type_) || (SMT_CubeOneInstance == sm_type_) || (SMT_CubeOneInstanceGS == sm_type_))
@@ -343,14 +343,15 @@ namespace
 	};
 
 
-	class PointLightSourceUpdate
+	class PointLightNodeUpdate
 	{
 	public:
-		void operator()(LightSource& light, float app_time, float /*elapsed_time*/)
+		void operator()(SceneNode& node, float app_time, float elapsed_time)
 		{
-			light.ModelMatrix(MathLib::rotation_z(0.4f)
-				* MathLib::rotation_y(app_time / 1.4f)
-				* MathLib::translation(2.0f, 12.0f, 4.0f));
+			KFL_UNUSED(elapsed_time);
+
+			node.TransformToParent(
+				MathLib::rotation_z(0.4f) * MathLib::rotation_y(app_time / 1.4f) * MathLib::translation(2.0f, 12.0f, 4.0f));
 		}
 	};
 
@@ -445,16 +446,21 @@ void ShadowCubeMap::OnCreate()
 	}
 	shadow_dual_tex_ = rf.MakeTexture2D(SHADOW_MAP_SIZE * 2,  SHADOW_MAP_SIZE, 1, 1, fmt, 1, 0, EAH_GPU_Read);
 
+	auto& root_node = Context::Instance().SceneManagerInstance().SceneRootNode();
+
 	light_ = MakeSharedPtr<PointLightSource>();
 	light_->Attrib(0);
 	light_->Color(float3(20, 20, 20));
 	light_->Falloff(float3(1, 1, 0));
-	light_->BindUpdateFunc(PointLightSourceUpdate());
-	light_->AddToSceneManager();
 
-	light_proxy_ = MakeSharedPtr<SceneObjectLightSourceProxy>(light_);
-	light_proxy_->Scaling(0.5f, 0.5f, 0.5f);
-	Context::Instance().SceneManagerInstance().SceneRootNode().AddChild(light_proxy_->RootNode());
+	auto light_proxy = LoadLightSourceProxyModel(light_);
+	light_proxy->RootNode()->TransformToParent(MathLib::scaling(0.5f, 0.5f, 0.5f) * light_proxy->RootNode()->TransformToParent());
+
+	light_node_ = MakeSharedPtr<SceneNode>(SceneNode::SOA_Cullable);
+	light_node_->AddComponent(light_);
+	light_node_->AddChild(light_proxy->RootNode());
+	light_node_->OnMainThreadUpdate().Connect(PointLightNodeUpdate());
+	root_node.AddChild(light_node_);
 
 	for (int i = 0; i < 6; ++ i)
 	{
@@ -610,7 +616,8 @@ uint32_t ShadowCubeMap::DoUpdate(uint32_t pass)
 			else
 			{
 				auto const & teapot = teapot_model_->Mesh(0);
-				auto so = MakeSharedPtr<SceneNode>(teapot, SceneNode::SOA_Cullable | SceneNode::SOA_Moveable);
+				auto so =
+					MakeSharedPtr<SceneNode>(MakeSharedPtr<RenderableComponent>(teapot), SceneNode::SOA_Cullable | SceneNode::SOA_Moveable);
 				so->OnSubThreadUpdate().Connect(
 					[](SceneNode& node, float app_time, float elapsed_time)
 					{
@@ -645,8 +652,8 @@ uint32_t ShadowCubeMap::DoUpdate(uint32_t pass)
 		case 0:
 		case 1:
 			{
-				float3 pos = light_->Position();
-				float3 lookat = light_->Position() + ((0 == pass) ? 1.0f : -1.0f) * light_->Direction();
+				float3 const pos = MathLib::transform_coord(float3(0, 0, 0), light_node_->TransformToParent());
+				float3 const lookat = MathLib::transform_coord(float3(0, 0, (0 == pass) ? 1.0f : -1.0f), light_node_->TransformToParent());
 				shadow_dual_buffers_[pass]->GetViewport()->camera->ViewParams(pos, lookat);
 
 				renderEngine.BindFrameBuffer(shadow_dual_buffers_[pass]);
@@ -655,7 +662,7 @@ uint32_t ShadowCubeMap::DoUpdate(uint32_t pass)
 				for (auto const & mesh : scene_meshes_)
 				{
 					checked_pointer_cast<OccluderMesh>(mesh)->GenShadowMapPass(true, sm_type_, pass);
-					checked_pointer_cast<OccluderMesh>(mesh)->LightSrc(light_);
+					checked_pointer_cast<OccluderMesh>(mesh)->LightSrc(light_, light_node_);
 				}
 			}
 			return App3DFramework::URV_NeedFlush;
@@ -710,7 +717,7 @@ uint32_t ShadowCubeMap::DoUpdate(uint32_t pass)
 				for (auto const & mesh : scene_meshes_)
 				{
 					checked_pointer_cast<OccluderMesh>(mesh)->GenShadowMapPass(true, sm_type_, pass);
-					checked_pointer_cast<OccluderMesh>(mesh)->LightSrc(light_);
+					checked_pointer_cast<OccluderMesh>(mesh)->LightSrc(light_, light_node_);
 				}
 			}
 			return App3DFramework::URV_NeedFlush;
@@ -744,7 +751,9 @@ uint32_t ShadowCubeMap::DoUpdate(uint32_t pass)
 			{
 			case 0:
 				{
-					shadow_cube_one_buffer_->GetViewport()->camera->ViewParams(light_->Position(), light_->Position() + light_->Direction());
+					float3 const pos = MathLib::transform_coord(float3(0, 0, 0), light_node_->TransformToParent());
+					float3 const lookat = MathLib::transform_coord(float3(0, 0, 1), light_node_->TransformToParent());
+					shadow_cube_one_buffer_->GetViewport()->camera->ViewParams(pos, lookat);
 
 					renderEngine.BindFrameBuffer(shadow_cube_one_buffer_);
 					renderEngine.CurFrameBuffer()->Clear(FrameBuffer::CBM_Color | FrameBuffer::CBM_Depth, Color(0.0f, 0.0f, 0.0f, 1), 1.0f, 0);
@@ -752,7 +761,7 @@ uint32_t ShadowCubeMap::DoUpdate(uint32_t pass)
 					for (auto const & mesh : scene_meshes_)
 					{
 						checked_pointer_cast<OccluderMesh>(mesh)->GenShadowMapPass(true, sm_type_, pass);
-						checked_pointer_cast<OccluderMesh>(mesh)->LightSrc(light_);
+						checked_pointer_cast<OccluderMesh>(mesh)->LightSrc(light_, light_node_);
 					}
 				}
 				return App3DFramework::URV_NeedFlush;

@@ -87,23 +87,25 @@ void CascadedShadowMapApp::OnCreate()
 	deferred_rendering_ = Context::Instance().DeferredRenderingLayerInstance();
 	deferred_rendering_->SSVOEnabled(0, false);
 
+	auto& root_node = Context::Instance().SceneManagerInstance().SceneRootNode();
+
 	AmbientLightSourcePtr ambient_light = MakeSharedPtr<AmbientLightSource>();
 	ambient_light->SkylightTex(y_cube, c_cube);
 	ambient_light->Color(float3(0.1f, 0.1f, 0.1f));
-	ambient_light->AddToSceneManager();
-	
-	sun_light_ = MakeSharedPtr<DirectionalLightSource>();
-	sun_light_->Attrib(0);
-	sun_light_->Direction(MathLib::normalize(float3(50, -50, 50)));
-	sun_light_->Color(float3(1, 1, 1));
-	sun_light_->BindUpdateFunc([this](LightSource& light, float app_time, float elapsed_time)
-	{
+	root_node.AddComponent(ambient_light);
+
+	auto sun_light = MakeSharedPtr<DirectionalLightSource>();
+	sun_light->Attrib(0);
+	sun_light->Color(float3(1, 1, 1));
+	auto sun_light_node = MakeSharedPtr<SceneNode>(SceneNode::SOA_Cullable | SceneNode::SOA_Moveable);
+	sun_light_node->OnMainThreadUpdate().Connect([this](SceneNode& node, float app_time, float elapsed_time) {
 		KFL_UNUSED(app_time);
 		KFL_UNUSED(elapsed_time);
 
-		light.Direction(light_ctrl_camera_.ForwardVec());
+		node.TransformToParent(light_ctrl_camera_.InverseViewMatrix());
 	});
-	sun_light_->AddToSceneManager();
+	sun_light_node->AddComponent(sun_light);
+	root_node.AddChild(sun_light_node);
 
 	fpcController_.Scalers(0.05f, 1.0f);
 
@@ -158,7 +160,7 @@ void CascadedShadowMapApp::OnCreate()
 
 	auto skybox = MakeSharedPtr<RenderableSkyBox>();
 	skybox->CompressedCubeMap(y_cube, c_cube);
-	Context::Instance().SceneManagerInstance().SceneRootNode().AddChild(MakeSharedPtr<SceneNode>(skybox, SceneNode::SOA_NotCastShadow));
+	root_node.AddChild(MakeSharedPtr<SceneNode>(MakeSharedPtr<RenderableComponent>(skybox), SceneNode::SOA_NotCastShadow));
 
 	RenderDeviceCaps const & caps = Context::Instance().RenderFactoryInstance().RenderEngineInstance().DeviceCaps();
 	if (caps.max_shader_model < ShaderModel(5, 0))

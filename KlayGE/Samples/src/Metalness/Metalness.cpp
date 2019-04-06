@@ -45,19 +45,14 @@ namespace
 			effect_ = SyncLoadRenderEffect("Metalness.fxml");
 			technique_ = effect_->TechniqueByName("PBFittingPrefiltered");
 
-			SceneManager& sm = Context::Instance().SceneManagerInstance();
-			for (uint32_t i = 0; i < sm.NumLights(); ++ i)
 			{
-				LightSourcePtr const & light = sm.GetLight(i);
-				if (LightSource::LT_Ambient == light->Type())
-				{
-					*(effect_->ParameterByName("skybox_Ycube_tex")) = light->SkylightTexY();
-					*(effect_->ParameterByName("skybox_Ccube_tex")) = light->SkylightTexC();
+				auto* ambient_light = Context::Instance().SceneManagerInstance().SceneRootNode().FirstComponentOfType<AmbientLightSource>();
 
-					uint32_t const mip = light->SkylightTexY()->NumMipMaps();
-					*(effect_->ParameterByName("diff_spec_mip")) = int2(mip - 1, mip - 2);
-					break;
-				}
+				*(effect_->ParameterByName("skybox_Ycube_tex")) = ambient_light->SkylightTexY();
+				*(effect_->ParameterByName("skybox_Ccube_tex")) = ambient_light->SkylightTexC();
+
+				uint32_t const mip = ambient_light->SkylightTexY()->NumMipMaps();
+				*(effect_->ParameterByName("diff_spec_mip")) = int2(mip - 1, mip - 2);
 			}
 		}
 
@@ -136,7 +131,7 @@ void MetalnessApp::OnCreate()
 
 	AmbientLightSourcePtr ambient_light = MakeSharedPtr<AmbientLightSource>();
 	ambient_light->SkylightTex(y_cube_map, c_cube_map);
-	ambient_light->AddToSceneManager();
+	root_node.AddComponent(ambient_light);
 
 	sphere_group_ = MakeSharedPtr<SceneNode>(SceneNode::SOA_Cullable);
 	root_node.AddChild(sphere_group_);
@@ -187,7 +182,7 @@ void MetalnessApp::OnCreate()
 
 	auto skybox = MakeSharedPtr<RenderableSkyBox>();
 	skybox->CompressedCubeMap(y_cube_map, c_cube_map);
-	root_node.AddChild(MakeSharedPtr<SceneNode>(skybox, SceneNode::SOA_NotCastShadow));
+	root_node.AddChild(MakeSharedPtr<SceneNode>(MakeSharedPtr<RenderableComponent>(skybox), SceneNode::SOA_NotCastShadow));
 
 	this->LookAt(float3(0.0f, 0.3f, -0.9f), float3(0, 0, 0));
 	this->Proj(0.05f, 100);

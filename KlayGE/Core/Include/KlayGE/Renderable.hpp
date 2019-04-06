@@ -25,6 +25,7 @@
 #include <KFL/ArrayRef.hpp>
 #include <vector>
 #include <KlayGE/RenderMaterial.hpp>
+#include <KlayGE/SceneComponent.hpp>
 
 namespace KlayGE
 {
@@ -340,6 +341,21 @@ namespace KlayGE
 		RenderEffectParameter* alpha_test_threshold_param_;
 
 		std::array<ShaderResourceViewPtr, RenderMaterial::TS_NumTextureSlots> textures_;
+	};
+
+	class KLAYGE_CORE_API RenderableComponent : public SceneComponent
+	{
+	public:
+		BOOST_TYPE_INDEX_REGISTER_RUNTIME_CLASS((SceneComponent))
+
+		explicit RenderableComponent(RenderablePtr const& renderable);
+
+		void Render() override;
+
+		Renderable& BoundRenderable() const;
+
+	private:
+		RenderablePtr renderable_;
 	};
 }
 

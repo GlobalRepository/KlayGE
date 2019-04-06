@@ -553,6 +553,10 @@ namespace KlayGE
 		default_ambient_light_ = MakeSharedPtr<AmbientLightSource>();
 		merged_ambient_light_ = MakeSharedPtr<AmbientLightSource>();
 
+		SceneManager& scene_mgr = Context::Instance().SceneManagerInstance();
+		default_ambient_light_->BindSceneNode(&scene_mgr.SceneRootNode());
+		merged_ambient_light_->BindSceneNode(&scene_mgr.SceneRootNode());
+
 #if DEFAULT_DEFERRED == TRIDITIONAL_DEFERRED
 		dr_effect_ = ASyncLoadRenderEffect("DeferredRendering.fxml");
 #elif DEFAULT_DEFERRED == LIGHT_INDEXED_DEFERRED
@@ -1406,11 +1410,11 @@ namespace KlayGE
 		lights_.clear();
 		sm_light_indices_.clear();
 
-		uint32_t const num_lights = scene_mgr.NumLights();
+		uint32_t const num_lights = scene_mgr.NumFrameLights();
 		
 		for (uint32_t i = 0; i < num_lights; ++ i)
 		{
-			auto light = scene_mgr.GetLight(i).get();
+			auto* light = scene_mgr.GetFrameLight(i);
 			if (light->Enabled() && (LightSource::LT_Ambient == light->Type()))
 			{
 				merged_ambient_light_->SkylightTex(light->SkylightTexY(), light->SkylightTexC());
@@ -1434,7 +1438,7 @@ namespace KlayGE
 		uint32_t num_sm_cube_lights = 0;
 		for (uint32_t i = 0; i < num_lights; ++ i)
 		{
-			auto light = scene_mgr.GetLight(i).get();
+			auto* light = scene_mgr.GetFrameLight(i);
 			if (light->Enabled())
 			{
 				if (LightSource::LT_Ambient == light->Type())
@@ -1543,7 +1547,7 @@ namespace KlayGE
 			{
 				if (node.Visible())
 				{
-					if (node.NumRenderables() > 0)
+					if (node.NumComponents() > 0)
 					{
 						visible_scene_nodes_.push_back(&node);
 
@@ -1762,7 +1766,7 @@ namespace KlayGE
 		case LightSource::LT_SphereArea:
 		case LightSource::LT_TubeArea:
 			{
-				float3 const & p = light.Position();
+				float3 const p = MathLib::transform_coord(float3(0, 0, 0), lights_[light_index]->BoundSceneNode()->TransformToWorld());
 				float4x4 light_model = MathLib::scaling(light_scale, light_scale, light_scale)
 					* MathLib::translation(p);
 				pvp.light_visibles[light_index] = (scene_mgr.AABBVisible(MathLib::transform_aabb(box_aabb_, light_model)) != BO_No);
@@ -2103,11 +2107,17 @@ namespace KlayGE
 		}
 	}
 
-	void DeferredRenderingLayer::PrepareLightCamera(PerViewport const & pvp,
-		LightSource const & light, int32_t index_in_pass, PassType pass_type)
+	void DeferredRenderingLayer::PrepareLightCamera(
+		PerViewport const& pvp, LightSource const& light, int32_t index_in_pass, PassType pass_type)
 	{
 		LightSource::LightType const type = light.Type();
 		PassCategory const pass_cat = GetPassCategory(pass_type);
+
+		float3 light_scale_unused;
+		Quaternion light_rot;
+		float3 light_pos;
+		MathLib::decompose(light_scale_unused, light_rot, light_pos, light.BoundSceneNode()->TransformToWorld());
+		float3 const light_dir = MathLib::transform_quat(float3(0, 0, 1), light_rot);
 
 		switch (type)
 		{
@@ -2121,19 +2131,19 @@ namespace KlayGE
 				float3 dir_es(0, 0, 0);
 				if (LightSource::LT_Spot == type)
 				{
-					dir_es = MathLib::transform_normal(light.Direction(), pvp.view);
+					dir_es = MathLib::transform_normal(light_dir, pvp.view);
 					sm_camera = light.SMCamera(0);
 				}
 				else if (LightSource::LT_Directional == type)
 				{
-					dir_es = MathLib::transform_normal(-light.Direction(), pvp.view);
+					dir_es = MathLib::transform_normal(-light_dir, pvp.view);
 					sm_camera = light.SMCamera(0);
 				}
 				else
 				{
 					int32_t face = std::min(index_in_pass, 5);
 					std::pair<float3, float3> ad = CubeMapViewVector<float>(static_cast<Texture::CubeFaces>(face));
-					dir_es = MathLib::transform_normal(MathLib::transform_quat(ad.first, light.Rotation()), pvp.view);
+					dir_es = MathLib::transform_normal(MathLib::transform_quat(ad.first, light_rot), pvp.view);
 					sm_camera = light.SMCamera(face);
 				}
 				float4 light_dir_es_actived = float4(dir_es.x(), dir_es.y(), dir_es.z(), 0);
@@ -2162,8 +2172,7 @@ namespace KlayGE
 					depth_to_esm_pp_->SetParam(1, inv_sm_proj);
 				}
 
-				float3 const & p = light.Position();
-				float3 loc_es = MathLib::transform_coord(p, pvp.view);
+				float3 loc_es = MathLib::transform_coord(light_pos, pvp.view);
 				float4 light_pos_es_actived = float4(loc_es.x(), loc_es.y(), loc_es.z(), 1);
 
 				float light_scale = std::min(light.Range() * 0.01f, 1.0f) * light_scale_;
@@ -2187,7 +2196,7 @@ namespace KlayGE
 					if ((PC_Shadowing == pass_cat) || (PC_Shading == pass_cat))
 					{
 						float4x4 const light_model = MathLib::scaling(light_scale, light_scale, light_scale)
-							* MathLib::to_matrix(light.Rotation()) * MathLib::translation(p);
+							* MathLib::to_matrix(light_rot) * MathLib::translation(light_pos);
 						*light_volume_mv_param_ = light_model * pvp.view;
 						*light_volume_mvp_param_ = light_model * pvp.view * pvp.proj;
 						*view_to_light_model_param_ = pvp.inv_view * MathLib::inverse(light_model);
@@ -2486,6 +2495,11 @@ namespace KlayGE
 			int32_t const attr = light.Attrib();
 			if (light.Enabled() && (0 == (attr & LightSource::LSA_NoShadow)) && pvp.light_visibles[li])
 			{
+				float3 light_scale_unused;
+				Quaternion light_rot;
+				float3 light_pos;
+				MathLib::decompose(light_scale_unused, light_rot, light_pos, light.BoundSceneNode()->TransformToWorld());
+
 				LightSource::LightType const type = light.Type();
 
 				Camera* sm_camera = nullptr;
@@ -2561,7 +2575,7 @@ namespace KlayGE
 				*reinterpret_cast<float*>(esms_scale_factor + shadowing_channel * esms_scale_factor_param_->Stride())
 					= ESM_SCALE_FACTOR / (sm_camera->FarPlane() - sm_camera->NearPlane());
 
-				float3 loc_es = MathLib::transform_coord(light.Position(), pvp.view);
+				float3 loc_es = MathLib::transform_coord(light_pos, pvp.view);
 				float4 light_pos_es_actived = float4(loc_es.x(), loc_es.y(), loc_es.z(), 1);
 
 				float range = light.Range() * light_scale_;
@@ -2589,7 +2603,7 @@ namespace KlayGE
 					{
 						float light_scale = std::min(light.Range() * 0.01f, 1.0f) * light_scale_;
 						float4x4 const light_model = MathLib::scaling(light_scale, light_scale, light_scale)
-							* MathLib::to_matrix(light.Rotation()) * MathLib::translation(light.Position());
+							* MathLib::to_matrix(light_rot) * MathLib::translation(light_pos);
 						*view_to_light_model_param_ = pvp.inv_view * MathLib::inverse(light_model);
 					}
 					break;
@@ -2749,7 +2763,7 @@ namespace KlayGE
 
 	void DeferredRenderingLayer::AddTranslucency(uint32_t org_no, PerViewport const & pvp, PassTargetBuffer pass_tb)
 	{
-		auto & light = lights_[org_no];
+		auto const& light = lights_[org_no];
 		LightSource::LightType const type = light->Type();
 		int32_t const light_index = sm_light_indices_[org_no].first;
 		if (light->Enabled() && pvp.light_visibles[org_no] && (0 == (light->Attrib() & LightSource::LSA_NoShadow))
@@ -2786,7 +2800,8 @@ namespace KlayGE
 				trans_pp->SetParam(0, pvp.inv_view * light_camera->ViewProjMatrix());
 				trans_pp->SetParam(1, pvp.inv_view * light_camera->ViewMatrix());
 				trans_pp->SetParam(2, pvp.inv_proj);
-				trans_pp->SetParam(3, MathLib::transform_coord(light->Position(), pvp.view));
+				trans_pp->SetParam(3, MathLib::transform_coord(
+						MathLib::transform_coord(float3(0, 0, 0), lights_[org_no]->BoundSceneNode()->TransformToWorld()), pvp.view));
 				trans_pp->SetParam(4, float3(light->Color()));
 				trans_pp->SetParam(5, light->Falloff());
 				trans_pp->SetParam(7, scene_camera.FarPlane());
@@ -3247,7 +3262,13 @@ namespace KlayGE
 
 			lights_color.push_back(light.Color());
 
-			float3 dir_es = MathLib::transform_normal(-light.Direction(), pvp.view);
+			float3 light_scale_unused;
+			Quaternion light_rot;
+			float3 light_pos;
+			MathLib::decompose(light_scale_unused, light_rot, light_pos, lights_[org_no]->BoundSceneNode()->TransformToWorld());
+			float3 const light_dir = MathLib::transform_quat(float3(0, 0, 1), light_rot);
+
+			float3 dir_es = MathLib::transform_normal(-light_dir, pvp.view);
 			lights_dir_es.push_back(float4(dir_es.x(), dir_es.y(), dir_es.z(), 0));
 
 			lights_attrib.push_back(float4((attr & LightSource::LSA_NoDiffuse) ? 0.0f : 1.0f,
@@ -3317,7 +3338,13 @@ namespace KlayGE
 
 			lights_color.push_back(light.Color());
 
-			float3 dir_es = MathLib::transform_normal(-light.Direction(), pvp.view);
+			float3 light_scale_unused;
+			Quaternion light_rot;
+			float3 light_pos;
+			MathLib::decompose(light_scale_unused, light_rot, light_pos, lights_[*iter]->BoundSceneNode()->TransformToWorld());
+			float3 const light_dir = MathLib::transform_quat(float3(0, 0, 1), light_rot);
+
+			float3 dir_es = MathLib::transform_normal(-light_dir, pvp.view);
 			lights_dir_es.push_back(float4(dir_es.x(), dir_es.y(), dir_es.z(), 0));
 
 			lights_attrib.push_back(float4((attr & LightSource::LSA_NoDiffuse) ? 0.0f : 1.0f,
@@ -3382,14 +3409,19 @@ namespace KlayGE
 
 			lights_color.push_back(light.Color());
 
-			float3 const & p = light.Position();
-			float3 const loc_es = MathLib::transform_coord(p, pvp.view);
+			float3 light_scale_unused;
+			Quaternion light_rot;
+			float3 light_pos;
+			MathLib::decompose(light_scale_unused, light_rot, light_pos, lights_[*iter]->BoundSceneNode()->TransformToWorld());
+			float3 const light_dir = MathLib::transform_quat(float3(0, 0, 1), light_rot);
+
+			float3 const loc_es = MathLib::transform_coord(light_pos, pvp.view);
 			lights_pos_es.push_back(float4(loc_es.x(), loc_es.y(), loc_es.z(), 1));
 
 			float3 dir_es(0, 0, 0);
 			if (LightSource::LT_Spot == type)
 			{
-				dir_es = MathLib::transform_normal(light.Direction(), pvp.view);
+				dir_es = MathLib::transform_normal(light_dir, pvp.view);
 			}
 			lights_dir_es.push_back(float4(dir_es.x(), dir_es.y(), dir_es.z(), 0));
 
@@ -3690,8 +3722,14 @@ namespace KlayGE
 					*reinterpret_cast<float4*>(lights_color
 						+ offset * lights_color_param_->Stride()) = light.Color();
 
-					float3 const & p = light.Position();
-					float3 loc_es = MathLib::transform_coord(p, pvp.view);
+					float3 light_scale_unused;
+					Quaternion light_rot;
+					float3 light_pos;
+					MathLib::decompose(
+						light_scale_unused, light_rot, light_pos, lights_[available_lights[t][i]]->BoundSceneNode()->TransformToWorld());
+					float3 const light_dir = MathLib::transform_quat(float3(0, 0, 1), light_rot);
+
+					float3 loc_es = MathLib::transform_coord(light_pos, pvp.view);
 					*reinterpret_cast<float4*>(lights_pos_es
 						+ offset * lights_pos_es_param_->Stride()) = float4(loc_es.x(), loc_es.y(), loc_es.z(), 1);
 
@@ -3703,11 +3741,11 @@ namespace KlayGE
 						break;
 
 					case LightSource::LT_Directional:
-						dir_es = MathLib::transform_normal(-light.Direction(), pvp.view);
+						dir_es = MathLib::transform_normal(-light_dir, pvp.view);
 						break;
 
 					case LightSource::LT_Spot:
-						dir_es = MathLib::transform_normal(light.Direction(), pvp.view);
+						dir_es = MathLib::transform_normal(light_dir, pvp.view);
 						break;
 
 					default:

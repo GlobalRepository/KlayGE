@@ -67,7 +67,7 @@ private:
 	int id_light_shaft_;
 	int id_fps_camera_;
 
-	KlayGE::LightSourcePtr sun_light_;
+	KlayGE::SceneNodePtr sun_light_node_;
 };
 
 #endif		// _OCEAN_HPP

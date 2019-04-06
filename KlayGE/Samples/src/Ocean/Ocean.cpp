@@ -204,7 +204,7 @@ namespace
 			strength_ = 10;
 
 			auto ocean_renderable = MakeSharedPtr<RenderOcean>(base_level_, strength_);
-			this->AddRenderable(ocean_renderable);
+			this->AddComponent(MakeSharedPtr<RenderableComponent>(ocean_renderable));
 
 			ocean_plane_ = MathLib::from_point_normal(float3(0, base_level_, 0), float3(0, 1, 0));
 			reflect_mat_ = MathLib::reflect(ocean_plane_);
@@ -386,7 +386,7 @@ namespace
 				dirty_ = false;
 			}
 
-			auto& ocean_renderable = checked_cast<RenderOcean&>(*renderables_[0]);
+			auto& ocean_renderable = checked_cast<RenderOcean&>(checked_cast<RenderableComponent&>(*components_[0]).BoundRenderable());
 
 			float t = app_time * ocean_param_.time_scale / ocean_param_.time_peroid;
 			float frame = (t - floor(t)) * ocean_param_.num_frames;
@@ -410,7 +410,7 @@ namespace
 
 		void ReflectionTex(TexturePtr const & tex)
 		{
-			auto& ocean_renderable = checked_cast<RenderOcean&>(*renderables_[0]);
+			auto& ocean_renderable = checked_cast<RenderOcean&>(checked_cast<RenderableComponent&>(*components_[0]).BoundRenderable());
 			ocean_renderable.ReflectionTex(tex);
 		}
 
@@ -530,7 +530,7 @@ namespace
 	private:
 		void GenWaveTextures()
 		{
-			auto& ocean_renderable = checked_cast<RenderOcean&>(*renderables_[0]);
+			auto& ocean_renderable = checked_cast<RenderOcean&>(checked_cast<RenderableComponent&>(*components_[0]).BoundRenderable());
 			ocean_renderable.PatchLength(ocean_param_.patch_length);
 
 			ocean_simulator_->Parameters(ocean_param_);
@@ -818,12 +818,15 @@ void OceanApp::OnCreate()
 
 	auto& root_node = Context::Instance().SceneManagerInstance().SceneRootNode();
 
-	sun_light_ = MakeSharedPtr<DirectionalLightSource>();
+	sun_light_node_ = MakeSharedPtr<SceneNode>(SceneNode::SOA_Cullable);
+	auto sun_light = MakeSharedPtr<DirectionalLightSource>();
 	// TODO: Fix the shadow flicking
-	sun_light_->Attrib(LightSource::LSA_NoShadow);
-	sun_light_->Direction(float3(0.267835f, -0.0517653f, -0.960315f));
-	sun_light_->Color(float3(1, 0.7f, 0.5f));
-	sun_light_->AddToSceneManager();
+	sun_light->Attrib(LightSource::LSA_NoShadow);
+	sun_light->Color(float3(1, 0.7f, 0.5f));
+	sun_light_node_->TransformToParent(
+		MathLib::to_matrix(MathLib::axis_to_axis(float3(0, 0, 1), float3(0.267835f, -0.0517653f, -0.960315f))));
+	sun_light_node_->AddComponent(sun_light);
+	root_node.AddChild(sun_light_node_);
 	
 	Color fog_color(0.61f, 0.52f, 0.62f, 1);
 	if (Context::Instance().Config().graphics_cfg.gamma)
@@ -846,15 +849,15 @@ void OceanApp::OnCreate()
 
 	ocean_ = MakeSharedPtr<OceanObject>();
 	root_node.AddChild(ocean_);
-	checked_pointer_cast<RenderOcean>(ocean_->GetRenderable())->SkylightTex(y_cube, c_cube);
-	checked_pointer_cast<RenderOcean>(ocean_->GetRenderable())->FogColor(fog_color);
+	checked_cast<RenderOcean&>(ocean_->FirstComponentOfType<RenderableComponent>()->BoundRenderable()).SkylightTex(y_cube, c_cube);
+	checked_cast<RenderOcean&>(ocean_->FirstComponentOfType<RenderableComponent>()->BoundRenderable()).FogColor(fog_color);
 
 	terrain_renderable->ReflectionPlane(checked_pointer_cast<OceanObject>(ocean_)->OceanPlane());
 
 	auto skybox = MakeSharedPtr<RenderableFoggySkyBox>();
 	skybox->CompressedCubeMap(y_cube, c_cube);
 	skybox->FogColor(fog_color);
-	root_node.AddChild(MakeSharedPtr<SceneNode>(skybox, SceneNode::SOA_NotCastShadow));
+	root_node.AddChild(MakeSharedPtr<SceneNode>(MakeSharedPtr<RenderableComponent>(skybox), SceneNode::SOA_NotCastShadow));
 
 	auto sun_flare = MakeSharedPtr<LensFlareSceneObject>();
 	sun_flare->Direction(float3(-0.267835f, 0.0517653f, 0.960315f));
@@ -867,7 +870,7 @@ void OceanApp::OnCreate()
 	deferred_rendering_->AtmosphericPostProcess(fog_pp_);
 
 	light_shaft_pp_ = MakeSharedPtr<LightShaftPostProcess>();
-	light_shaft_pp_->SetParam(1, sun_light_->Color());
+	light_shaft_pp_->SetParam(1, sun_light->Color());
 
 	Camera& scene_camera = this->ActiveCamera();
 	reflection_fb_ = Context::Instance().RenderFactoryInstance().MakeFrameBuffer();
@@ -1159,7 +1162,8 @@ uint32_t OceanApp::DoUpdate(uint32_t pass)
 	{
 		if (light_shaft_on_)
 		{
-			light_shaft_pp_->SetParam(0, -sun_light_->Direction() * 10000.0f + this->ActiveCamera().EyePos());
+			light_shaft_pp_->SetParam(0, -MathLib::transform_normal(float3(0, 0, 1), sun_light_node_->TransformToParent()) * 10000.0f +
+											 this->ActiveCamera().EyePos());
 			light_shaft_pp_->InputPin(0, deferred_rendering_->PrevFrameResolvedShadingTex(deferred_rendering_->ActiveViewport()));
 			light_shaft_pp_->InputPin(1, deferred_rendering_->PrevFrameResolvedDepthTex(deferred_rendering_->ActiveViewport()));
 			light_shaft_pp_->Apply();

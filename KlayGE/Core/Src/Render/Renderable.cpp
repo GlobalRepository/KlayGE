@@ -522,4 +522,21 @@ namespace KlayGE
 			KFL_UNREACHABLE("Invalid pass type");
 		}
 	}
+
+
+	RenderableComponent::RenderableComponent(RenderablePtr const& renderable)
+		: renderable_(renderable)
+	{
+		BOOST_ASSERT(renderable);
+	}
+
+	void RenderableComponent::Render()
+	{
+		renderable_->Render();
+	}
+
+	Renderable& RenderableComponent::BoundRenderable() const
+	{
+		return *renderable_;
+	}
 }

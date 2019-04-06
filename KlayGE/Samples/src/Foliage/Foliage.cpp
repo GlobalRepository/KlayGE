@@ -102,13 +102,16 @@ void FoliageApp::OnCreate()
 	auto ambient_light = MakeSharedPtr<AmbientLightSource>();
 	ambient_light->SkylightTex(y_cube, c_cube);
 	ambient_light->Color(float3(0.1f, 0.1f, 0.1f));
-	ambient_light->AddToSceneManager();
+	root_node.AddComponent(ambient_light);
 
-	sun_light_ = MakeSharedPtr<DirectionalLightSource>();
-	sun_light_->Attrib(LightSource::LSA_NoShadow);
-	sun_light_->Direction(float3(0.267835f, -0.0517653f, -0.960315f));
-	sun_light_->Color(float3(3, 3, 3));
-	sun_light_->AddToSceneManager();
+	sun_light_node_ = MakeSharedPtr<SceneNode>(SceneNode::SOA_Cullable);
+	auto sun_light = MakeSharedPtr<DirectionalLightSource>();
+	sun_light->Attrib(LightSource::LSA_NoShadow);
+	sun_light->Color(float3(3, 3, 3));
+	sun_light_node_->TransformToParent(
+		MathLib::to_matrix(MathLib::axis_to_axis(float3(0, 0, 1), float3(0.267835f, -0.0517653f, -0.960315f))));
+	sun_light_node_->AddComponent(sun_light);
+	root_node.AddChild(sun_light_node_);
 	
 	Color fog_color(0.61f, 0.52f, 0.62f, 1);
 	if (Context::Instance().Config().graphics_cfg.gamma)
@@ -133,10 +136,10 @@ void FoliageApp::OnCreate()
 	auto skybox = MakeSharedPtr<RenderableFoggySkyBox>();
 	skybox->CompressedCubeMap(y_cube, c_cube);
 	skybox->FogColor(fog_color);
-	root_node.AddChild(MakeSharedPtr<SceneNode>(skybox, SceneNode::SOA_NotCastShadow));
+	root_node.AddChild(MakeSharedPtr<SceneNode>(MakeSharedPtr<RenderableComponent>(skybox), SceneNode::SOA_NotCastShadow));
 
 	auto sun_flare = MakeSharedPtr<LensFlareSceneObject>();
-	sun_flare->Direction(float3(-0.267835f, 0.0517653f, 0.960315f));
+	sun_flare->Direction(MathLib::transform_normal(float3(0, 0, -1), sun_light_node_->TransformToParent()));
 	root_node.AddChild(sun_flare);
 
 	fog_pp_ = SyncLoadPostProcess("Fog.ppml", "fog");
@@ -146,7 +149,7 @@ void FoliageApp::OnCreate()
 	deferred_rendering_->AtmosphericPostProcess(fog_pp_);
 
 	light_shaft_pp_ = MakeSharedPtr<LightShaftPostProcess>();
-	light_shaft_pp_->SetParam(1, sun_light_->Color());
+	light_shaft_pp_->SetParam(1, sun_light->Color());
 
 	fpcController_.Scalers(0.05f, 1.0f);
 
@@ -252,7 +255,8 @@ uint32_t FoliageApp::DoUpdate(uint32_t pass)
 	{
 		if (light_shaft_on_)
 		{
-			light_shaft_pp_->SetParam(0, -sun_light_->Direction() * 10000.0f + this->ActiveCamera().EyePos());
+			light_shaft_pp_->SetParam(0, -MathLib::transform_normal(float3(0, 0, 1), sun_light_node_->TransformToParent()) * 10000.0f +
+											this->ActiveCamera().EyePos());
 			light_shaft_pp_->InputPin(0, deferred_rendering_->PrevFrameResolvedShadingTex(0));
 			light_shaft_pp_->InputPin(1, deferred_rendering_->PrevFrameResolvedDepthTex(0));
 			light_shaft_pp_->Apply();
