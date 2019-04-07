@@ -1087,7 +1087,6 @@ void MotionBlurDoFApp::DoUpdateOverlay()
 uint32_t MotionBlurDoFApp::DoUpdate(uint32_t pass)
 {
 	Context& context = Context::Instance();
-	App3DFramework& app = context.AppInstance();
 	SceneManager& scene_mgr = context.SceneManagerInstance();
 	RenderEngine& re = context.RenderFactoryInstance().RenderEngineInstance();
 
@@ -1166,8 +1165,6 @@ uint32_t MotionBlurDoFApp::DoUpdate(uint32_t pass)
 	case 0:
 		{
 			Camera& camera = this->ActiveCamera();
-
-			camera.Update(app.AppTime(), app.FrameTime());
 
 			if (depth_texture_support_)
 			{

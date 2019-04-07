@@ -206,8 +206,10 @@ namespace
 		{
 		}
 
-		void operator()(Camera& camera, float app_time, float elapsed_time)
+		void operator()(SceneComponent& component, float app_time, float elapsed_time)
 		{
+			Camera& camera = checked_cast<Camera&>(component);
+
 			std::any py_ret = this->Run(app_time, elapsed_time);
 			if (std::any_cast<std::vector<std::any>>(&py_ret) != nullptr)
 			{
@@ -733,7 +735,7 @@ void ScenePlayerApp::LoadScene(std::string const & name)
 		camera.ProjParams(fov, aspect, near_plane, far_plane);
 		if (!update_script.empty())
 		{
-			camera.BindUpdateFunc(CameraUpdate(update_script));
+			camera.OnMainThreadUpdate().Connect(CameraUpdate(update_script));
 		}
 	}
 }

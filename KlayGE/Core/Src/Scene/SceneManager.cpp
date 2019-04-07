@@ -85,7 +85,6 @@ namespace KlayGE
 		quit_ = true;
 		(*update_thread_)();
 
-		this->ClearCamera();
 		this->ClearObject();
 	}
 
@@ -172,36 +171,19 @@ namespace KlayGE
 		}
 	}
 
-	void SceneManager::AddCamera(CameraPtr const & camera)
+	uint32_t SceneManager::NumFrameCameras() const
 	{
-		cameras_.push_back(camera);
-	}
-	
-	void SceneManager::DelCamera(CameraPtr const & camera)
-	{
-		auto iter = std::find(cameras_.begin(), cameras_.end(), camera);
-		cameras_.erase(iter);
+		return static_cast<uint32_t>(frame_cameras_.size());
 	}
 
-	std::vector<CameraPtr>::iterator SceneManager::DelCamera(std::vector<CameraPtr>::iterator iter)
+	CameraPtr& SceneManager::GetFrameCamera(uint32_t index)
 	{
-		std::lock_guard<std::mutex> lock(update_mutex_);
-		return cameras_.erase(iter);
+		return frame_cameras_[index];
 	}
 
-	uint32_t SceneManager::NumCameras() const
+	CameraPtr const & SceneManager::GetFrameCamera(uint32_t index) const
 	{
-		return static_cast<uint32_t>(cameras_.size());
-	}
-
-	CameraPtr& SceneManager::GetCamera(uint32_t index)
-	{
-		return cameras_[index];
-	}
-
-	CameraPtr const & SceneManager::GetCamera(uint32_t index) const
-	{
-		return cameras_[index];
+		return frame_cameras_[index];
 	}
 
 	uint32_t SceneManager::NumFrameLights() const
@@ -339,11 +321,6 @@ namespace KlayGE
 		}
 	}
 
-	void SceneManager::ClearCamera()
-	{
-		cameras_.clear();
-	}
-
 	void SceneManager::ClearObject()
 	{
 		std::lock_guard<std::mutex> lock(update_mutex_);
@@ -379,6 +356,10 @@ namespace KlayGE
 
 				if (node.Visible())
 				{
+					node.ForEachComponentOfType<Camera>([this](Camera& camera) {
+						frame_cameras_.push_back(camera.shared_from_this());
+					});
+
 					node.ForEachComponentOfType<LightSource>([this](LightSource& light) {
 						frame_lights_.push_back(light.shared_from_this());
 					});
@@ -389,11 +370,6 @@ namespace KlayGE
 			scene_root_.UpdatePosBoundSubtree();
 
 			overlay_root_.ClearChildren();
-		}
-
-		for (auto const & camera : cameras_)
-		{
-			camera->Update(app_time, frame_time);
 		}
 
 		this->FlushScene();

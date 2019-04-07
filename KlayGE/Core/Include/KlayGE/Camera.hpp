@@ -22,15 +22,20 @@
 #include <KFL/Frustum.hpp>
 #include <KFL/Vector.hpp>
 #include <KFL/Matrix.hpp>
+#include <KlayGE/SceneComponent.hpp>
 
 namespace KlayGE
 {
 	// 3DÉãÏñ»ú²Ù×÷
 	//////////////////////////////////////////////////////////////////////////////////
-	class KLAYGE_CORE_API Camera : boost::noncopyable, public std::enable_shared_from_this<Camera>
+	class KLAYGE_CORE_API Camera : public SceneComponent, public std::enable_shared_from_this<Camera>
 	{
 	public:
 		Camera();
+
+		void Render() override
+		{
+		}
 
 		float3 const & EyePos() const
 			{ return *reinterpret_cast<float3 const *>(&inv_view_mat_.Row(3)); }
@@ -62,12 +67,7 @@ namespace KlayGE
 		void ProjOrthoParams(float w, float h, float near_plane, float far_plane);
 		void ProjOrthoOffCenterParams(float left, float top, float right, float bottom, float near_plane, float far_plane);
 
-		void BindUpdateFunc(std::function<void(Camera&, float, float)> const & update_func);
-
-		void Update(float app_time, float elapsed_time);
-
-		void AddToSceneManager();
-		void DelFromSceneManager();
+		void MainThreadUpdate(float app_time, float elapsed_time) override;
 
 		float4x4 const & ViewMatrix() const;
 		float4x4 const & ProjMatrix() const;
@@ -109,18 +109,16 @@ namespace KlayGE
 
 		mutable float4x4	view_proj_mat_;
 		mutable float4x4	inv_view_proj_mat_;
-		mutable bool		view_proj_mat_dirty_;
+		mutable bool		view_proj_mat_dirty_ = true;
 		mutable float4x4	view_proj_mat_wo_adjust_;
 		mutable float4x4	inv_view_proj_mat_wo_adjust_;
-		mutable bool		view_proj_mat_wo_adjust_dirty_;
+		mutable bool		view_proj_mat_wo_adjust_dirty_ = true;
 
 		mutable Frustum	frustum_;
-		mutable bool	frustum_dirty_;
+		mutable bool	frustum_dirty_ = true;
 
-		uint32_t	mode_;
-		int cur_jitter_index_;
-
-		std::function<void(Camera&, float, float)> update_func_;
+		uint32_t	mode_ = 0;
+		int cur_jitter_index_ = 0;
 	};
 }
 

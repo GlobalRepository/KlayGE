@@ -1014,7 +1014,7 @@ namespace KlayGE
 		auto camera_node = MakeSharedPtr<SceneNode>(SceneNode::SOA_Cullable | SceneNode::SOA_Moveable | SceneNode::SOA_NotCastShadow);
 
 		CameraPtr camera = MakeSharedPtr<Camera>();
-		camera->AddToSceneManager();
+		camera_node->AddComponent(camera);
 
 		auto camera_proxy = LoadCameraProxyModel(camera);
 		auto camera_proxy_node = MakeSharedPtr<SceneNode>(SceneNode::SOA_Cullable | SceneNode::SOA_Moveable | SceneNode::SOA_NotCastShadow);
@@ -1054,7 +1054,6 @@ namespace KlayGE
 		{
 			if (ET_Camera == iter->second.type)
 			{
-				iter->second.camera->DelFromSceneManager();
 				Context::Instance().SceneManagerInstance().SceneRootNode().RemoveChild(iter->second.scene_node);
 				entities_.erase(iter ++);
 			}
@@ -1076,23 +1075,6 @@ namespace KlayGE
 		if (iter != entities_.end())
 		{
 			Context::Instance().SceneManagerInstance().SceneRootNode().RemoveChild(iter->second.scene_node);
-
-			switch (iter->second.type)
-			{
-			case ET_Model:
-				break;
-
-			case ET_Light:
-				break;
-
-			case ET_Camera:
-				iter->second.camera->DelFromSceneManager();
-				break;
-
-			default:
-				break;
-			}
-
 			entities_.erase(iter);
 		}
 

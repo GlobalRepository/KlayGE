@@ -616,16 +616,16 @@ namespace KlayGE
 		CameraController::AttachCamera(camera);
 
 		start_time_ = Context::Instance().AppInstance().AppTime();
-		camera.BindUpdateFunc(
-			[this](Camera& camera, float app_time, float elapsed_time)
+		connection_ = camera.OnMainThreadUpdate().Connect(
+			[this](SceneComponent& component, float app_time, float elapsed_time)
 			{
-				this->UpdateCameraFunc(camera, app_time, elapsed_time);
+				this->UpdateCameraFunc(checked_cast<Camera&>(component), app_time, elapsed_time);
 			});
 	}
 
 	void CameraPathController::DetachCamera()
 	{
-		camera_->BindUpdateFunc(std::function<void(Camera&, float, float)>());
+		camera_->OnMainThreadUpdate().Disconnect(connection_);
 
 		CameraController::DetachCamera();
 	}

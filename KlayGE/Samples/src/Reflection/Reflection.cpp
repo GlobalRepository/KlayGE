@@ -226,11 +226,13 @@ void ScreenSpaceReflectionApp::OnCreate()
 	tb_controller_.AttachCamera(this->ActiveCamera());
 	tb_controller_.Scalers(0.003f, 0.05f);
 
+	auto& root_node = Context::Instance().SceneManagerInstance().SceneRootNode();
+
 	screen_camera_path_ = LoadCameraPath(ResLoader::Instance().Open("Reflection.cam_path"));
 	screen_camera_path_->AttachCamera(this->ActiveCamera());
-	this->ActiveCamera().AddToSceneManager();
-
-	auto& root_node = Context::Instance().SceneManagerInstance().SceneRootNode();
+	auto camera_node = MakeSharedPtr<SceneNode>(SceneNode::SOA_Cullable | SceneNode::SOA_Moveable);
+	camera_node->AddComponent(this->ActiveCamera().shared_from_this());
+	root_node.AddChild(camera_node);
 
 	AmbientLightSourcePtr ambient_light = MakeSharedPtr<AmbientLightSource>();
 	ambient_light->SkylightTex(y_cube_, c_cube_);
